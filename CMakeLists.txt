@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(residual_fusion)
 
+set(CMAKE_PREFIX_PATH "/home/ulrik/libtorch")
+
 find_package(Torch REQUIRED)
 find_package(pybind11 REQUIRED)
 
