@@ -1,19 +1,11 @@
-cmake_minimum_required(VERSION 3.1)
-project(resnet VERSION 1.0)
+cmake_minimum_required(VERSION 3.10)
+project(residual_fusion)
 
-#Set the C++ standard
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED YES)
-
-
-#Set the path for libtorch and pybind11
-set(CMAKE_PREFIX_PATH "/home/ulrik/libtorch") #libtorch 
-set(CMAKE_PREFIX_PATH "/home/ulrik/.local/lib/python3.8/site-packages/pybind11") #pybind11 
-
-#Find the Torch package
 find_package(Torch REQUIRED)
 find_package(pybind11 REQUIRED)
 
-#Add subdirectory for the source files
-add_subdirectory(src)
-add_subdirectory(python)
+add_library(binder MODULE binder.cpp)
+target_link_libraries(binder PRIVATE ${TORCH_LIBRARIES} pybind11::module)
+set_target_properties(binder PROPERTIES PREFIX "${PYTHON_MODULE_PREFIX}" SUFFIX "${PYTHON_MODULE_EXTENSION}")
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
