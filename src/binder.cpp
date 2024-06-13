@@ -1,11 +1,8 @@
 #include <torch/torch.h>
 #include <pybind11/pybind11.h>
-
-torch::Tensor return_tensor(){
-    return torch::rand({2, 3});
-}
+#include "fused_ops_kernel.h"
 
 PYBIND11_MODULE(binder, handle){
-    handle.def("tensor_func", &return_tensor);
+    handle.def("bn_relu_forward", &bn_relu_forward);
 }
 
