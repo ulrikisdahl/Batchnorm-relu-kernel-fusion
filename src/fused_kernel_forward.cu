@@ -22,6 +22,7 @@ __device__ T* shared_memory_proxy()
     return reinterpret_cast<T*>(memory);
 }
 
+
 template <typename scalar_t> //works because ATEN abstracts away datatype 
 __global__ void bn_relu_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t, 4, torch::RestrictPtrTraits> tensor,
@@ -29,12 +30,12 @@ __global__ void bn_relu_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t, 3, torch::RestrictPtrTraits> betas,
     int N, int C, int H, int W
     ){
-
+    
     //the shared memory is split into two parts:
     // - the first part is in range [0, N) - this is where the tensor values are stored
     // - the second part is in range [N, 2N) - this is where the values used to compute the statistics are stored 
-    //auto sharedMemory = shared_memory_proxy<scalar_t>();
-    extern __shared__ float sharedMemory[];
+    auto sharedMemory = shared_memory_proxy<scalar_t>();
+    //extern __shared__ float sharedMemory[];
 
     int batch_idx = threadIdx.x; //represents the element along the batch dimension we are processing
     int channel_idx = blockIdx.x;
@@ -79,7 +80,7 @@ __global__ void bn_relu_forward_kernel(
         __syncthreads();
 
         //copy result over to HBM
-        tensor[batch_idx][channel_idx][height_idx][width_idx] = sharedMemory[threadIdx.x]; 
+        tensor[batch_idx][channel_idx][height_idx][width_idx] = sharedMemory[threadIdx.x];
     }
 }
 
