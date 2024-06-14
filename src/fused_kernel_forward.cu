@@ -25,7 +25,8 @@ __device__ T* shared_memory_proxy()
 template <typename scalar_t> //works because ATEN abstracts away datatype 
 __global__ void bn_relu_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t, 4, torch::RestrictPtrTraits> tensor,
-    float lambda, float beta,
+    torch::PackedTensorAccessor32<scalar_t, 3, torch::RestrictPtrTraits> lambdas,
+    torch::PackedTensorAccessor32<scalar_t, 3, torch::RestrictPtrTraits> betas,
     int N, int C, int H, int W
     ){
 
@@ -72,8 +73,10 @@ __global__ void bn_relu_forward_kernel(
         scalar_t stddev = sqrt(sharedMemory[N] / N + epsilon);
 
         //Step 3: Batch Normalization + ReLU. In range [0, N)
+        scalar_t lambda = lambdas[channel_idx][height_idx][width_idx]; //TODO: improve access 
+        scalar_t beta = betas[channel_idx][height_idx][width_idx];
         sharedMemory[threadIdx.x] = relu(lambda * (sharedMemory[threadIdx.x] - mean) / stddev + beta); //unecessary write
-        __syncthreads(); 
+        __syncthreads();
 
         //copy result over to HBM
         tensor[batch_idx][channel_idx][height_idx][width_idx] = sharedMemory[threadIdx.x]; 
@@ -84,10 +87,10 @@ __global__ void bn_relu_forward_kernel(
  * @brief Fuses batch normalization step and ReLU activation step to one kernel
  * 
  * @param tensor: input tensor of shape (batch_size, channels, height, width)
- * @param lambda: scaling factor for batch normalization
- * @param beta: offset for batch normalization
+ * @param lambdas: scaling factor for each feature, of shape (C, H, W)
+ * @param beta: offsets for batch normalization, of shape (C, H, W) 
  */
-std::vector<torch::Tensor> bn_relu_forward(torch::Tensor tensor, float lambda, float beta){
+std::vector<torch::Tensor> bn_relu_forward(torch::Tensor tensor, torch::Tensor lambdas, torch::Tensor betas){
     int N = tensor.sizes()[0]; //batch_size
     int C = tensor.sizes()[1];
     int H = tensor.sizes()[2];
@@ -101,7 +104,8 @@ std::vector<torch::Tensor> bn_relu_forward(torch::Tensor tensor, float lambda, f
     AT_DISPATCH_FLOATING_TYPES(tensor.scalar_type(), "bn_relu_forward", ([&] { //abstracts away boilerplate needed to handle different float types
         bn_relu_forward_kernel<<<grid, blockDimension>>>(
             tensor.packed_accessor32<scalar_t, 4, torch::RestrictPtrTraits>(),
-            lambda, beta,
+            lambdas.packed_accessor32<scalar_t, 3, torch::RestrictPtrTraits>(),
+            betas.packed_accessor32<scalar_t, 3, torch::RestrictPtrTraits>(),
             N, C, H, W
         );
     }));
