@@ -31,11 +31,11 @@ __global__ void bn_relu_forward_kernel(
 
     //the shared memory is split into two parts:
     // - the first part is in range [0, N) - this is where the tensor values are stored
-    // - the second part is in range [N + 1, 2N) - this is where the values used to compute the statistics are stored 
-    auto sharedMemory = shared_memory_proxy<scalar_t>();
-    // extern __shared__ scalar_t sharedMemory[];
+    // - the second part is in range [N, 2N) - this is where the values used to compute the statistics are stored 
+    //auto sharedMemory = shared_memory_proxy<scalar_t>();
+    extern __shared__ float sharedMemory[];
 
-    int batch_idx = threadIdx.x;
+    int batch_idx = threadIdx.x; //represents the element along the batch dimension we are processing
     int channel_idx = blockIdx.x;
     int height_idx = blockIdx.y;
     int width_idx = blockIdx.z;
@@ -45,6 +45,8 @@ __global__ void bn_relu_forward_kernel(
         //step 0: Load into shared memory
         scalar_t thread_value = tensor[batch_idx][channel_idx][height_idx][width_idx];
         sharedMemory[threadIdx.x] = thread_value; //allocates memory addresses in range [0, N)
+        sharedMemory[N + threadIdx.x] = thread_value; //NB!
+        __syncthreads(); 
 
         //Step 1: Sum reduction
         for (int stride_div = 2; stride_div <= N; stride_div *= 2){
@@ -54,7 +56,7 @@ __global__ void bn_relu_forward_kernel(
             __syncthreads();
         }
 
-        //Step 2: Compute batch statistics per feature
+        //Step 2: Compute batch statistics per feature. In the range [N, 2N)
         scalar_t mean = sharedMemory[N] / N;
         sharedMemory[N + threadIdx.x] = (sharedMemory[threadIdx.x] - mean) * (sharedMemory[threadIdx.x] - mean); //important to not offset by N on the right
         __syncthreads();
@@ -67,10 +69,11 @@ __global__ void bn_relu_forward_kernel(
         }
         
         scalar_t epsilon = 1e-5;
-        scalar_t stddev = sqrt(sharedMemory[N] / N + epsilon); 
+        scalar_t stddev = sqrt(sharedMemory[N] / N + epsilon);
 
-        //Step 3: Batch Normalization + ReLU
-        sharedMemory[threadIdx.x] = relu(lambda * (sharedMemory[threadIdx.x] - mean) / stddev + beta);
+        //Step 3: Batch Normalization + ReLU. In range [0, N)
+        sharedMemory[threadIdx.x] = relu(lambda * (sharedMemory[threadIdx.x] - mean) / stddev + beta); //unecessary write
+        __syncthreads(); 
 
         //copy result over to HBM
         tensor[batch_idx][channel_idx][height_idx][width_idx] = sharedMemory[threadIdx.x]; 
