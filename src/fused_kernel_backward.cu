@@ -49,21 +49,23 @@ __global__ void bn_relu_backward_kernel(
         scalar_t relu_grad = d_relu(reconstructed_output) * output_grad[batch_idx][channel_idx][height_idx][width_idx]; //the delta
         input_grad[batch_idx][channel_idx][height_idx][width_idx] = relu_grad * lambdas[channel_idx][height_idx][width_idx] / stddev_value; //dL/dx
     
-        sharedMemory[threadIdx.x] = relu_grad * normalized_value; //the amount that this batch element contributed to the loss for the feautre
-        __syncthreads();
 
         //compute gradients for lambdas and betas
-        if (threadIdx.x == 0){
+        sharedMemory[threadIdx.x] = relu_grad * normalized_value; //individual gradient for lambda on one sample
+        sharedMemory[N + threadIdx.x] = relu_grad; //individual gradient for beta on one sample
+        __syncthreads();
+        
+        if (threadIdx.x == 0){ //TODO: Use sum reduction
             scalar_t grad_lambda = 0;
             scalar_t grad_beta = 0;
             for(int i = 0; i < N; i++){
-                grad_lambda += sharedMemory[i];
-                grad_beta += relu_grad;
+                grad_lambda += sharedMemory[i]; //sum gradients
+                grad_beta += sharedMemory[N + i];
             }
             atomicAdd(&lambdas_grad[channel_idx][height_idx][width_idx], grad_lambda);
             atomicAdd(&betas_grad[channel_idx][height_idx][width_idx], grad_beta);
         }
-    }   
+    }
 }
 
 
