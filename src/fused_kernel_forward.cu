@@ -28,6 +28,8 @@ __global__ void bn_relu_forward_kernel(
     torch::PackedTensorAccessor32<scalar_t, 4, torch::RestrictPtrTraits> tensor,
     torch::PackedTensorAccessor32<scalar_t, 3, torch::RestrictPtrTraits> lambdas,
     torch::PackedTensorAccessor32<scalar_t, 3, torch::RestrictPtrTraits> betas,
+    torch::PackedTensorAccessor32<scalar_t, 3, torch::RestrictPtrTraits> means,
+    torch::PackedTensorAccessor32<scalar_t, 3, torch::RestrictPtrTraits> stddevs,
     int N, int C, int H, int W
     ){
     
@@ -73,6 +75,11 @@ __global__ void bn_relu_forward_kernel(
         scalar_t epsilon = 1e-5;
         scalar_t stddev = sqrt(sharedMemory[N] / N + epsilon);
 
+        if(threadIdx.x == 0){ //save for backward pass
+            means[channel_idx][height_idx][width_idx] = mean;
+            stddevs[channel_idx][height_idx][width_idx] = stddev;
+        }
+
         //Step 3: Batch Normalization + ReLU. In range [0, N)
         scalar_t lambda = lambdas[channel_idx][height_idx][width_idx]; //TODO: improve access 
         scalar_t beta = betas[channel_idx][height_idx][width_idx];
@@ -99,6 +106,9 @@ std::vector<torch::Tensor> bn_relu_forward(torch::Tensor tensor, torch::Tensor l
 
     int BLOCK_SIZE = N;
 
+    auto means = torch::zeros({C, H, W}, tensor.options());
+    auto stddevs = torch::zeros({C, H, W}, tensor.options());
+
     dim3 grid(C, H, W); //each block contains one feature (along a batch), and each grid contains all features  
     int blockDimension = BLOCK_SIZE; 
     
@@ -107,9 +117,11 @@ std::vector<torch::Tensor> bn_relu_forward(torch::Tensor tensor, torch::Tensor l
             tensor.packed_accessor32<scalar_t, 4, torch::RestrictPtrTraits>(),
             lambdas.packed_accessor32<scalar_t, 3, torch::RestrictPtrTraits>(),
             betas.packed_accessor32<scalar_t, 3, torch::RestrictPtrTraits>(),
+            means.packed_accessor32<scalar_t, 3, torch::RestrictPtrTraits>(), //mean
+            stddevs.packed_accessor32<scalar_t, 3, torch::RestrictPtrTraits>(), //stddev
             N, C, H, W
         );
     }));
 
-    return {tensor};
+    return {tensor, means, stddevs};
 }
