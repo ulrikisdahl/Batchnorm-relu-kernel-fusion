@@ -28,9 +28,9 @@ class BatchNormReluFunction(Function):
             grad_output: gradient of the output from the forward operation
         """
         input_tensor, lambdas, betas, means, stddevs = ctx.saved_tensors
-        input_grad = torch.empty_like(output_grad, device=device)
-        lambdas_grad = torch.zeros_like(lambdas, device=device)
-        betas_grad = torch.zeros_like(betas, device=device) 
+        input_grad = torch.empty_like(output_grad, device=output_grad.device)
+        lambdas_grad = torch.zeros_like(lambdas, device=output_grad.device)
+        betas_grad = torch.zeros_like(betas, device=output_grad.device) 
         input_grad, lambdas_grad, betas_grad = bn_relu_backward(
             output_grad, input_tensor, input_grad, lambdas, betas, lambdas_grad, betas_grad, means, stddevs
             )
